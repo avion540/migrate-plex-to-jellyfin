@@ -49,6 +49,19 @@ class JellyFinServer:
     def get_user_views(self, user_id: str) -> List:
         return self._get(endpoint='Users/{}/Views'.format(user_id))
 
+    def get_show_provider_id(self, user_id: str, series_id: str) -> List:
+        """Get show's provider id from Jellyfin library
+
+        Returns:
+            List: List of results
+        """
+        q = {
+            'Fields': 'ProviderIds'
+        }
+        result = self._get(
+            endpoint=f"Users/{user_id}/Items/{series_id}", payload=q)
+        return result['ProviderIds']
+
     def get_all(self, user_id: str) -> List:
         """Get all items from JellyFin library
 
