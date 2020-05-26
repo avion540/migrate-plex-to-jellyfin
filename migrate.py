@@ -172,14 +172,14 @@ def migrate(
                             break
                 except Exception as e:
                     if debug:
-                        print(str(e))
+                        print(f"{bcolors.WARNING}Error: {e}{bcolors.ENDC}")
                         print(d)
                     # Sometimes bad file names cause errors
-                    if f"{d['SeriesName']} - {d['Name']}" in error_items:
+                    if f"{d['SeriesName']} - {d['Name']}" not in error_items:
                         print(
                             f"{bcolors.WARNING}No metadata found for {d['SeriesName']} - {d['Name']}{bcolors.ENDC}"
                         )
-                        error_items += f"{d['SeriesName']} - {d['Name']}\n"
+                        error_items += f"\n{d['SeriesName']} - {d['Name']}"
                     continue
             elif str(d["Type"]) == "Movie":
                 if d["ProviderIds"].get(w["provider"]) == w["item_id"]:
@@ -202,11 +202,12 @@ def migrate(
                 print(
                     f"{bcolors.WARNING}No matches for {w['title']} - S{season_episode[1]}E{season_episode[2]}{bcolors.ENDC}"
                 )
+                no_matches += f"\n{w['title']} - S{season_episode[1]}E{season_episode[2]}"
             else:
                 print(
                     f"{bcolors.WARNING}No matches for {w['title']}{bcolors.ENDC}"
                 )
-            no_matches += f"{w['title']}\n"
+                no_matches += f"\n{w['title']}"
             if no_skip:
                 sys.exit(1)
         else:
@@ -229,10 +230,10 @@ def migrate(
             f"{bcolors.WARNING}Unknown files. Check to make sure they're recognized correctly by Jellyfin: {error_items}{bcolors.ENDC}"
         )
     if no_matches:
-        print(f"Unsuccessful imports: {bcolors.WARNING}{no_matches}")
+        print(f"{bcolors.WARNING}Unsuccessful imports: {no_matches}{bcolors.ENDC}")
 
     toc = time.perf_counter()
-    print(f"Time to mark items as watched: {toc - tic}:0.4f seconds")
+    print(f"Time to mark items as watched: {toc - tic:0.4f} seconds")
 
 
 def _extract_provider(data: dict) -> dict:
