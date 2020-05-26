@@ -7,7 +7,6 @@ import re
 import sys
 
 from plexapi.server import PlexServer
-from plexapi.library import LibrarySection
 from jellyfin_client import JellyFinServer
 
 import time
@@ -101,7 +100,8 @@ def migrate(
                 # so using regex to strip out all punctuation and spaces to
                 # compare and check for show.title existing in e
                 # Slicing for the first 16 chars because that's the cutoff in e
-                if re.sub('\W+', '', show.title).lower()[:16] in re.sub('\W+', '', str(e)).lower():
+                if re.sub('\W+', '', show.title).lower()[:16] in re.sub(
+                        '\W+', '', str(e)).lower():
                     info = _extract_provider(data=e.guid)
                     info["title"] = show.title
                     plex_watched.append(info)
@@ -120,12 +120,16 @@ def migrate(
 
         for show in watched_anime:
             shows_watched.append(show.title)
-            # Get all Plex TV Shows watched episodes            
+            # Get all Plex TV Shows watched episodes
             for e in watched_episodes:
                 # Couldn't figure out how to get just the show title from e,
                 # so using regex to strip out all punctuation and spaces to
                 # compare and check for show.title existing in e
                 # Slicing for the first 16 chars because that's the cutoff in e
+                # TODO:
+                # Pulling both Tvdb and AniDB Id's sometimes. Need to clear duplicates and prefer one. AniDB or Tvdb
+                # {'provider': 'AniDB', 'item_id': '14440/1/1', 'title': 'A Certain Scientific Accelerator'}
+                # {'provider': 'Tvdb', 'item_id': '114921/1/1', 'title': 'A Certain Scientific Accelerator'}
                 if re.sub('\W+', '', show.title).lower()[:16] in re.sub(
                         '\W+', '', str(e)).lower():
                     info = _extract_provider(data=e.guid)
@@ -148,21 +152,17 @@ def migrate(
     print(
         f"{bcolors.OKBLUE}Starting Plex to Jellyfin watch status migration{bcolors.ENDC}"
     )
-    # TODO:
-    # Match 
-    for w in plex_watched:
-        is_episode = False
 
+    tic = time.perf_counter()
+    for w in plex_watched:
         # Search
         for d in jf_library:
             if str(d["Type"]) == "Episode" and d["SeriesName"] == w["title"]:
-                is_episode = True
+                #if str(w['title']) == "The Ambition of Oda Nobuna" and d["SeriesName"] == w["title"]:
                 try:
-                    #print my_string.split("world",1)[1] 
-                    if f"{d['ParentIndexNumber']}/{d['IndexNumber']}" == w["item_id"].partition("/")[2]:
-                    #if f"{d['ParentIndexNumber']}/{d['IndexNumber']}" in w[
-                    #        "item_id"]:
-                        #print(w["item_id"].partition("/")[2])
+                    #print my_string.split("world",1)[1]
+                    if f"{d['ParentIndexNumber']}/{d['IndexNumber']}" == w[
+                            "item_id"].partition("/")[2]:
                         # Get show's ProviderID
                         show_provider_id = jellyfin.get_show_provider_id(
                             user_id=jf_uid, series_id=d["SeriesId"])
@@ -170,66 +170,69 @@ def migrate(
                                 == str(w["item_id"])):
                             search_result = d
                             break
-                        print(f"{bcolors.WARNING}ProviderID API fetch was run: {show_provider_id}{bcolors.ENDC}")
-                        print(f"{bcolors.WARNING}ProviderID: {show_provider_id.get(w['provider'])}{bcolors.ENDC}")
-                        print(f"{bcolors.WARNING}Plex item_id: {w['item_id']}{bcolors.ENDC}")
-                        print(f"{d['ParentIndexNumber']}/{d['IndexNumber']}")
-                except KeyError:
-                    print(str(e))
-                    print(d)
+                except Exception as e:
+                    if debug:
+                        print(str(e))
+                        print(d)
                     # Sometimes bad file names cause errors
                     if f"{d['SeriesName']} - {d['Name']}" in error_items:
-                        print(f"{bcolors.WARNING}No metadata found for {d['SeriesName']} - {d['Name']}{bcolors.ENDC}")
+                        print(
+                            f"{bcolors.WARNING}No metadata found for {d['SeriesName']} - {d['Name']}{bcolors.ENDC}"
+                        )
                         error_items += f"{d['SeriesName']} - {d['Name']}\n"
                     continue
             elif str(d["Type"]) == "Movie":
                 if d["ProviderIds"].get(w["provider"]) == w["item_id"]:
-                    print(str(d["Type"]))
                     search_result = d
-                    print(f"No. {search_result}")
                     break
 
         if search_result and not search_result["UserData"]["Played"]:
             jellyfin.mark_watched(user_id=jf_uid, item_id=search_result["Id"])
-            if is_episode:
+            if str(d["Type"]) == "Episode":
                 print(
                     f"{bcolors.OKGREEN}Marked {w['title']} - S{d['ParentIndexNumber']}E{d['IndexNumber']} as watched{bcolors.ENDC}"
                 )
             else:
-                print(d)
                 print(
                     f"{bcolors.OKGREEN}Marked {w['title']} as watched{bcolors.ENDC}"
                 )
         elif not search_result:
-            if is_episode:
+            if str(d["Type"]) == "Episode":
+                season_episode = str(w["item_id"]).split("/")
                 print(
-                    f"{bcolors.WARNING}No matches for {w['title']} - S{d['ParentIndexNumber']}E{d['IndexNumber']}{bcolors.ENDC}"
+                    f"{bcolors.WARNING}No matches for {w['title']} - S{season_episode[1]}E{season_episode[2]}{bcolors.ENDC}"
                 )
             else:
                 print(
                     f"{bcolors.WARNING}No matches for {w['title']}{bcolors.ENDC}"
                 )
-            no_matches += w["title"] + " "
+            no_matches += f"{w['title']}\n"
             if no_skip:
                 sys.exit(1)
         else:
             if debug:
-                if is_episode:
+                if str(d["Type"]) == "Episode":
                     print(
                         f"{bcolors.OKBLUE}{w['title']} - S{d['ParentIndexNumber']}E{d['IndexNumber']}{bcolors.ENDC}"
                     )
                 else:
-                    print(d)
-                    print(w)
                     print(f"{d['Type']} - {d['SeriesName']} - {d['Name']}")
                     print(f"{bcolors.OKBLUE}{w['title']}{bcolors.ENDC}")
+
+        search_result = []
+
     print(
         f"{bcolors.OKGREEN}Succesfully migrated {len(plex_watched)} items{bcolors.ENDC}"
     )
     if error_items:
-        print(f"{bcolors.WARNING}Unknown files. Check to make sure they're recognized correctly by Jellyfin: {error_items}{bcolors.ENDC}")
+        print(
+            f"{bcolors.WARNING}Unknown files. Check to make sure they're recognized correctly by Jellyfin: {error_items}{bcolors.ENDC}"
+        )
     if no_matches:
         print(f"Unsuccessful imports: {bcolors.WARNING}{no_matches}")
+
+    toc = time.perf_counter()
+    print(f"Time to mark items as watched: {toc - tic}:0.4f seconds")
 
 
 def _extract_provider(data: dict) -> dict:
