@@ -7,7 +7,10 @@ import re
 import sys
 
 from plexapi.server import PlexServer
+from plexapi.library import LibrarySection
 from jellyfin_client import JellyFinServer
+
+import time
 
 
 class bcolors:
@@ -31,6 +34,10 @@ class bcolors:
 @click.option("--debug/--no-debug", help="Print more output")
 @click.option("--no-skip/--skip",
               help="Skip when no match it found instead of exiting")
+@click.option("--movie-lib-name", help="Plex Movie Library Name i.e. 'Movies'")
+@click.option("--show-lib-name",
+              help="Plex TV Show Library Name i.e. 'TV Shows'")
+@click.option("--anime-lib-name", help="Plex Anime Library Name i.e. 'Anime'")
 def migrate(
     plex_url: str,
     plex_token: str,
@@ -40,6 +47,9 @@ def migrate(
     secure: bool,
     debug: bool,
     no_skip: bool,
+    movie_lib_name: str,
+    show_lib_name: str,
+    anime_lib_name: str,
 ):
 
     # Remove insecure request warnings
@@ -62,54 +72,69 @@ def migrate(
     no_matches = ""
 
     # Get all Plex watched movies
-    print(f"{bcolors.OKBLUE}Fetching watched movies from Plex{bcolors.ENDC}")
-    plex_movies = plex.library.section("Movies")
-    for m in plex_movies.search(unwatched=False):
-        info = _extract_provider(data=m.guid)
-        info["title"] = m.title
-        plex_watched.append(info)
-        if debug:
-            print(info)
+    if movie_lib_name is not None:
+        print(
+            f"{bcolors.OKBLUE}Fetching watched movies from Plex{bcolors.ENDC}")
+        plex_movies = plex.library.section(movie_lib_name)
+        for m in plex_movies.search(unwatched=False):
+            info = _extract_provider(data=m.guid)
+            info["title"] = m.title
+            plex_watched.append(info)
+            if debug:
+                print(info)
+    else:
+        print("Movie library name was not specified, skipping.")
 
     # Get list of shows that contain watched episodes
-    print(f"{bcolors.OKBLUE}Fetching watched TV Shows from Plex{bcolors.ENDC}")
-    plex_tvshows = plex.library.section("TV Shows")
-    for show in plex_tvshows.search(unwatched=False):
-        shows_watched.append(show.title)
-        # Get all Plex TV Shows watched episodes
-        for e in plex_tvshows.searchEpisodes(unwatched=False):
-            # Couldn't figure out how to get just the show title from e,
-            # so using regex to strip out all punctuation and spaces to
-            # compare and check for show.title existing in e
-            # Slicing for the first 16 chars because that's the cutoff in e
-            if re.sub('\W+', '',
-                      show.title).lower()[:16] in re.sub('\W+', '',
-                                                         str(e)).lower():
-                info = _extract_provider(data=e.guid)
-                info["title"] = show.title
-                plex_watched.append(info)
-                if debug:
-                    print(info)
+    if show_lib_name is not None:
+        print(
+            f"{bcolors.OKBLUE}Fetching watched TV Shows from Plex{bcolors.ENDC}"
+        )
+        plex_tvshows = plex.library.section(show_lib_name)
+        watched_shows = plex_tvshows.search(unwatched=False)
+        watched_episodes = plex_tvshows.searchEpisodes(unwatched=False)
+        for show in watched_shows:
+            # Get all Plex TV Shows watched episodes
+            for e in watched_episodes:
+                shows_watched.append(show.title)
+                # Couldn't figure out how to get just the show title from e,
+                # so using regex to strip out all punctuation and spaces to
+                # compare and check for show.title existing in e
+                # Slicing for the first 16 chars because that's the cutoff in e
+                if re.sub('\W+', '', show.title).lower()[:16] in re.sub('\W+', '', str(e)).lower():
+                    info = _extract_provider(data=e.guid)
+                    info["title"] = show.title
+                    plex_watched.append(info)
+                    if debug:
+                        print(info)
+    else:
+        print("TV Show library name was not specified, skipping.")
 
     # Get all Plex Anime watched episodes
-    print(f"{bcolors.OKBLUE}Fetching watched Anime from Plex{bcolors.ENDC}")
-    plex_anime = plex.library.section("Anime")
-    for show in plex_anime.search(unwatched=False):
-        shows_watched.append(show.title)
-        # Get all Plex TV Shows watched episodes
-        for e in plex_anime.searchEpisodes(unwatched=False):
-            # Couldn't figure out how to get just the show title from e,
-            # so using regex to strip out all punctuation and spaces to
-            # compare and check for show.title existing in e
-            # Slicing for the first 16 chars because that's the cutoff in e
-            if re.sub('\W+', '',
-                      show.title).lower()[:16] in re.sub('\W+', '',
-                                                         str(e)).lower():
-                info = _extract_provider(data=e.guid)
-                info["title"] = show.title
-                plex_watched.append(info)
-                if debug:
-                    print(info)
+    if anime_lib_name is not None:
+        print(
+            f"{bcolors.OKBLUE}Fetching watched Anime from Plex{bcolors.ENDC}")
+        plex_anime = plex.library.section(anime_lib_name)
+        watched_anime = plex_anime.search(unwatched=False)
+        watched_episodes = plex_anime.searchEpisodes(unwatched=False)
+
+        for show in watched_anime:
+            shows_watched.append(show.title)
+            # Get all Plex TV Shows watched episodes            
+            for e in watched_episodes:
+                # Couldn't figure out how to get just the show title from e,
+                # so using regex to strip out all punctuation and spaces to
+                # compare and check for show.title existing in e
+                # Slicing for the first 16 chars because that's the cutoff in e
+                if re.sub('\W+', '', show.title).lower()[:16] in re.sub(
+                        '\W+', '', str(e)).lower():
+                    info = _extract_provider(data=e.guid)
+                    info["title"] = show.title
+                    plex_watched.append(info)
+                    if debug:
+                        print(info)
+    else:
+        print("Anime library name was not specified, skipping.")
 
     # This gets all jellyfin movies since filtering on provider id isn't supported:
     # https://github.com/jellyfin/jellyfin/issues/1990
@@ -120,7 +145,11 @@ def migrate(
     error_items = ""
 
     # Find Plex items in Jellyfin and mark as watched
-    print(f"{bcolors.OKBLUE}Starting Plex to Jellyfin watch status migration{bcolors.ENDC}")
+    print(
+        f"{bcolors.OKBLUE}Starting Plex to Jellyfin watch status migration{bcolors.ENDC}"
+    )
+    # TODO:
+    # Match 
     for w in plex_watched:
         is_episode = False
 
@@ -128,16 +157,12 @@ def migrate(
         for d in jf_library:
             if str(d["Type"]) == "Episode" and d["SeriesName"] == w["title"]:
                 is_episode = True
-                # Test for bad file names
                 try:
-                    temp = f"{d['ParentIndexNumber']}/{d['IndexNumber']}"
-                except Exception as e:
-                    print(str(e))
-                    pass
-
-                if f"{d['ParentIndexNumber']}/{d['IndexNumber']}" in w[
-                        "item_id"]:
-                    try:
+                    #print my_string.split("world",1)[1] 
+                    if f"{d['ParentIndexNumber']}/{d['IndexNumber']}" == w["item_id"].partition("/")[2]:
+                    #if f"{d['ParentIndexNumber']}/{d['IndexNumber']}" in w[
+                    #        "item_id"]:
+                        #print(w["item_id"].partition("/")[2])
                         # Get show's ProviderID
                         show_provider_id = jellyfin.get_show_provider_id(
                             user_id=jf_uid, series_id=d["SeriesId"])
@@ -145,10 +170,18 @@ def migrate(
                                 == str(w["item_id"])):
                             search_result = d
                             break
-                    except Exception as e:
-                        print(str(e))
-                        print(d)
-                        error_items += str(d["Name"])
+                        print(f"{bcolors.WARNING}ProviderID API fetch was run: {show_provider_id}{bcolors.ENDC}")
+                        print(f"{bcolors.WARNING}ProviderID: {show_provider_id.get(w['provider'])}{bcolors.ENDC}")
+                        print(f"{bcolors.WARNING}Plex item_id: {w['item_id']}{bcolors.ENDC}")
+                        print(f"{d['ParentIndexNumber']}/{d['IndexNumber']}")
+                except KeyError:
+                    print(str(e))
+                    print(d)
+                    # Sometimes bad file names cause errors
+                    if f"{d['SeriesName']} - {d['Name']}" in error_items:
+                        print(f"{bcolors.WARNING}No metadata found for {d['SeriesName']} - {d['Name']}{bcolors.ENDC}")
+                        error_items += f"{d['SeriesName']} - {d['Name']}\n"
+                    continue
             elif str(d["Type"]) == "Movie":
                 if d["ProviderIds"].get(w["provider"]) == w["item_id"]:
                     print(str(d["Type"]))
@@ -163,6 +196,7 @@ def migrate(
                     f"{bcolors.OKGREEN}Marked {w['title']} - S{d['ParentIndexNumber']}E{d['IndexNumber']} as watched{bcolors.ENDC}"
                 )
             else:
+                print(d)
                 print(
                     f"{bcolors.OKGREEN}Marked {w['title']} as watched{bcolors.ENDC}"
                 )
@@ -185,12 +219,17 @@ def migrate(
                         f"{bcolors.OKBLUE}{w['title']} - S{d['ParentIndexNumber']}E{d['IndexNumber']}{bcolors.ENDC}"
                     )
                 else:
+                    print(d)
+                    print(w)
+                    print(f"{d['Type']} - {d['SeriesName']} - {d['Name']}")
                     print(f"{bcolors.OKBLUE}{w['title']}{bcolors.ENDC}")
     print(
         f"{bcolors.OKGREEN}Succesfully migrated {len(plex_watched)} items{bcolors.ENDC}"
     )
-    print(f"Bad files: {bcolors.WARNING}{error_items}")
-    print(f"Unsuccessful imports: {bcolors.WARNING}{no_matches}")
+    if error_items:
+        print(f"{bcolors.WARNING}Unknown files. Check to make sure they're recognized correctly by Jellyfin: {error_items}{bcolors.ENDC}")
+    if no_matches:
+        print(f"Unsuccessful imports: {bcolors.WARNING}{no_matches}")
 
 
 def _extract_provider(data: dict) -> dict:
@@ -213,7 +252,7 @@ def _extract_provider(data: dict) -> dict:
                                                           "Imdb").replace(
                                                               "hama", "AniDB"),
         "item_id":
-        match.group(2).replace("anidb-", ""),
+        match.group(2).replace("anidb-", "").replace("tvdb-", "")
     }
 
 
